@@ -4,6 +4,7 @@ ruleset wovyn_base {
         shares __testing
         use module sensor_profile alias profile
         use module io.picolabs.subscription alias Subscriptions
+        use module temperature_store alias temp_store
     }
 
     global {
@@ -64,6 +65,27 @@ ruleset wovyn_base {
                 attributes {"temperature": temperature,"timestamp": event:attr("timestamp") , "threshold": profile:get_threshold()}
                 if is_violation
         }
+    }
+
+    
+
+    rule report_request {
+        select when sensor:report_request
+        foreach Subscriptions:established("Tx", event:attr("Rx")) setting (sub)
+            event:send
+                (
+                    { 
+                        "eci": sub{"Tx"}, 
+                        "eid": "1337",
+                        "domain": "sensor", 
+                        "type": "temperature_report",
+                        "attrs": {
+                            "report_id": event:attr("report_id"),
+                            "report": temp_store:temperatures()
+                            }
+                    },
+                    sub{"Tx_host"}
+                )
     }
 
     rule threshold_notification {

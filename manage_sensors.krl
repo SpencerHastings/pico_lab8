@@ -36,6 +36,10 @@ ruleset manage_sensors {
             )
         }
 
+        temperature_report = function() {
+            (ent:reports.length() < 5) => ent:reports | ent:reports.slice(ent:reports.length() - 5, ent:reports.length() - 1) 
+        }
+
         __testing = { "queries": [],
             "events":  
             [ 
@@ -53,10 +57,88 @@ ruleset manage_sensors {
                 },
                 {
                     "domain": "sensor", "type": "subscribe_out", "attrs": [ "name", "wellKnown_Tx", "Tx_host" ]
+                },
+                {
+                    "domain": "manager", "type": "new_report", "attrs": []
                 }
             ] 
         }
 
+    }
+
+    rule initialize {
+        select when wrangler ruleset_added where event:attr("rids") >< meta:rid
+        always {
+            ent:report_id := 0
+            ent:reports := {}
+        }
+    }
+
+    rule start_new_temperature_report {
+        select when manager:new_report
+      
+        fired {
+            new_id = ent:report_id
+            ent:report_id := ent:report_id + 1
+
+            ent:reports{new_id} := {
+                "sensors_queried" : 0,
+                "sensors_responded" : 0,
+                "temperatures" : []
+            }
+
+            raise manager event "send_report_requests"
+                attributes 
+                {
+                    "report_id": new_id
+                }
+        }
+        
+    }
+
+    rule send_report_requests {
+        select when manager:send_report_requests
+        foreach Subscriptions:established("Tx_role", "sensor") setting (sub)
+            pre {
+                id = event:attr("report_id")
+            }
+            event:send(
+                {
+                    "eci": sub{"Tx"},
+                    "eid": "1337",
+                    "domain": "sensor",
+                    "type": "report_request",
+                    "attrs": {
+                        "report_id": id,
+                        "Rx": sub{"Rx"}
+                    }
+                },
+                sub{"Tx_host"}
+            )
+            fired {
+                ent:reports{id} := ent:reports{id}.put(
+                    "sensors_queried", 
+                    ent:reports{id}{"sensors_queried"} + 1
+                    )
+            }
+    }
+
+    rule receive_report {
+        select when sensor:temperature_report
+        pre {
+            id = event:attr("report_id")
+            report = event:attr("report")
+        }
+        fired {
+            ent:reports{id} := ent:reports{id}.put(
+                "sensors_responded", 
+                ent:reports{id}{"sensors_responded"} + 1
+                )
+            ent:reports{id} := ent:reports{id}.put(
+                "reports", 
+                ent:reports{id}{"reports"}.append(report)
+                )
+        }
     }
 
     rule make_sensor_subscription {
