@@ -2,7 +2,7 @@ ruleset manage_sensors {
 
     meta {
         provides all_temperatures
-        shares __testing, all_temperatures
+        shares __testing, all_temperatures, temperature_report
         use module io.picolabs.subscription alias Subscriptions
     }
 
@@ -36,11 +36,19 @@ ruleset manage_sensors {
             )
         }
 
+        
+
         temperature_report = function() {
-            (ent:reports.length() < 5) => ent:reports | ent:reports.slice(ent:reports.length() - 5, ent:reports.length() - 1) 
+            (ent:reports.length() < 5) => ent:reports | 
+                ent:reports.filter(
+                    function(v,k) {
+                        (k >= (ent:reports.length() - 5)) && (k <= (ent:reports.length() - 1))
+                    }
+
+                ) 
         }
 
-        __testing = { "queries": [],
+        __testing = { "queries": [{ "name": "temperature_report" }],
             "events":  
             [ 
                 { 
@@ -60,6 +68,9 @@ ruleset manage_sensors {
                 },
                 {
                     "domain": "manager", "type": "new_report", "attrs": []
+                },
+                {
+                    "domain": "manager", "type": "clear_reports", "attrs": []
                 }
             ] 
         }
@@ -78,13 +89,14 @@ ruleset manage_sensors {
         select when manager:new_report
       
         fired {
-            new_id = ent:report_id
-            ent:report_id := ent:report_id + 1
+            new_id = ent:report_id.defaultsTo(0)
+            ent:report_id := ent:report_id.defaultsTo(0) + 1
 
             ent:reports{new_id} := {
+                "id" : new_id,
                 "sensors_queried" : 0,
                 "sensors_responded" : 0,
-                "temperatures" : []
+                "temperatures" : null
             }
 
             raise manager event "send_report_requests"
@@ -136,8 +148,16 @@ ruleset manage_sensors {
                 )
             ent:reports{id} := ent:reports{id}.put(
                 "reports", 
-                ent:reports{id}{"reports"}.append(report)
+                ent:reports{id}{"reports"}.defaultsTo([]).append(report)
                 )
+        }
+    }
+
+    rule clear_reports {
+        select when manager:clear_reports
+        fired {
+            clear ent:reports
+            clear ent:report_id
         }
     }
 

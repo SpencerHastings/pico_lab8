@@ -81,7 +81,10 @@ ruleset wovyn_base {
                         "type": "temperature_report",
                         "attrs": {
                             "report_id": event:attr("report_id"),
-                            "report": temp_store:temperatures()
+                            "report": {
+                                    "name" : meta:eci,
+                                    "temps": temp_store:temperatures()
+                                }
                             }
                     },
                     sub{"Tx_host"}
